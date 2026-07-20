@@ -7,21 +7,21 @@ Usage:
     python model/train.py
     python model/train.py --test-frac 0.2 --depths 0.05,0.10,0.20,0.30,0.50
 """
-import sys
-import os
-import json
 import argparse
+import json
+import os
+import sys
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "db"))
 
+import joblib
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
-import joblib
-from sklearn.metrics import roc_auc_score, average_precision_score
-
 from db_utils import get_engine
-from features import build_feature_matrix
 from evaluate import queue_depth_report, random_baseline_report
+from features import build_feature_matrix
+from sklearn.metrics import average_precision_score, roc_auc_score
 
 ARTIFACT_DIR = os.path.join(os.path.dirname(__file__), "artifacts")
 

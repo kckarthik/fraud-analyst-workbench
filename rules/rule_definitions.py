@@ -9,8 +9,8 @@ These are simplified analogues of real bank fraud rules — not a claim
 to replicate proprietary rule logic, but structurally representative of
 the kind of velocity/behavioral/deviation checks banks actually run.
 """
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
 def prior_expanding_stats(df: pd.DataFrame, group_col: str, val_col: str):

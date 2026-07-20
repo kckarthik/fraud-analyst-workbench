@@ -14,9 +14,8 @@ import hashlib
 from datetime import datetime, timedelta
 
 import pandas as pd
-from tqdm import tqdm
-
 from db_utils import get_engine
+from tqdm import tqdm
 
 DATA_DIR = "../data"
 

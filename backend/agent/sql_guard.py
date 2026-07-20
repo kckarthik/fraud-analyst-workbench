@@ -20,7 +20,7 @@ def validate_and_cap(sql: str) -> str:
     try:
         statements = [s for s in sqlglot.parse(sql, read="postgres") if s is not None]
     except Exception as e:
-        raise SQLGuardError(f"Could not parse SQL: {e}")
+        raise SQLGuardError(f"Could not parse SQL: {e}") from e
 
     if len(statements) != 1:
         raise SQLGuardError("Exactly one SQL statement is required.")

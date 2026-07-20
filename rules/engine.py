@@ -10,17 +10,17 @@ Usage:
     python rules/engine.py --skip-rules new_device,missing_identity_high_amount,region_mismatch
     (use --skip-rules for datasets without device/identity/region fields, e.g. PaySim)
 """
-import sys
-import os
 import argparse
+import os
+import sys
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "db"))
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import text
-from db_utils import get_engine, bulk_copy_insert, pg_text_array
+from db_utils import bulk_copy_insert, get_engine, pg_text_array
 from rule_definitions import RULE_REGISTRY
-
+from sqlalchemy import text
 
 # FK constraints + secondary indexes on alerts/dispositions that make bulk COPY
 # pathologically slow at multi-million-row scale: every inserted alert triggers

@@ -17,8 +17,7 @@ import glob
 from datetime import datetime, timedelta
 
 import pandas as pd
-
-from db_utils import get_engine, bulk_copy_insert
+from db_utils import bulk_copy_insert, get_engine
 
 DATA_DIR = "../data"
 REFERENCE_START = datetime(2019, 1, 1)  # arbitrary anchor; PaySim's "step" = hours elapsed

@@ -8,20 +8,20 @@ Requires model/train.py to have been run first (loads its saved model).
 Usage:
     python model/explain.py
 """
-import sys
-import os
 import json
+import os
+import sys
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "db"))
 
+import joblib
 import numpy as np
 import pandas as pd
 import shap
-import joblib
-from tqdm import tqdm
-from sqlalchemy import text
-
-from db_utils import get_engine, bulk_jsonb_update
+from db_utils import bulk_jsonb_update, get_engine
 from features import build_feature_matrix
+from sqlalchemy import text
+from tqdm import tqdm
 
 ARTIFACT_DIR = os.path.join(os.path.dirname(__file__), "artifacts")
 TOP_N_REASONS = 4
@@ -128,7 +128,11 @@ def write_back(engine, alert_ids: pd.Series, scores: np.ndarray, reasons: list):
     """
     records = (
         (int(alert_id), json.dumps({"model_score": round(float(score), 4), "reason_codes": reason}))
-        for alert_id, score, reason in zip(alert_ids, scores, reasons)
+        # strict=True: these three are parallel arrays from one scoring pass.
+        # If they ever diverge in length, zip would silently truncate and stamp
+        # scores onto the wrong alerts — the same misalignment class of bug that
+        # already cost ~0.15 AUC in the velocity features. Fail loudly instead.
+        for alert_id, score, reason in zip(alert_ids, scores, reasons, strict=True)
     )
     bulk_jsonb_update(engine, records, "alerts", "alert_id", "enrichment", mode="merge")
 

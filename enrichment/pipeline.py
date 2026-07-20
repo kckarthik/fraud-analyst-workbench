@@ -5,15 +5,21 @@ alerts.enrichment (JSONB column).
 Usage:
     python enrichment/pipeline.py
 """
-import sys
-import os
 import json
+import os
+import sys
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "db"))
 
 import pandas as pd
+from db_utils import bulk_jsonb_update, get_engine
+from features import (
+    build_narrative_summary,
+    compute_amount_zscore,
+    compute_prior_alert_stats,
+    compute_velocity_features,
+)
 from tqdm import tqdm
-from db_utils import get_engine, bulk_jsonb_update
-from features import compute_velocity_features, compute_amount_zscore, compute_prior_alert_stats, build_narrative_summary
 
 
 def load_data(engine):
@@ -68,7 +74,7 @@ def write_enrichment(engine, enrichment_df: pd.DataFrame):
     the first enrichment write for each alert, so overwrite mode is correct.
     """
     print(f"Writing enrichment for {len(enrichment_df):,} alerts (bulk) ...")
-    records = zip(enrichment_df["alert_id"].astype(int), enrichment_df["enrichment"])
+    records = zip(enrichment_df["alert_id"].astype(int), enrichment_df["enrichment"], strict=True)
     bulk_jsonb_update(engine, records, "alerts", "alert_id", "enrichment", mode="overwrite")
 
 

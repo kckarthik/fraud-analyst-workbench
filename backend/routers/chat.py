@@ -1,7 +1,6 @@
-from fastapi import APIRouter
-
-from schemas import ChatRequest, ChatResponse
 from agent.graph import run_agent
+from fastapi import APIRouter
+from schemas import ChatRequest, ChatResponse
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 

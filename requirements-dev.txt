@@ -1,0 +1,9 @@
+# Development and CI dependencies. Install alongside requirements.txt:
+#   pip install -r requirements.txt -r requirements-dev.txt
+pytest==9.1.1
+ruff==0.14.6
+
+# Drives a real browser for the README screenshots (and, later, end-to-end
+# tests). Uses the system Chrome via channel="chrome", so no browser download
+# is needed locally; CI would need `playwright install chromium`.
+playwright==1.61.0

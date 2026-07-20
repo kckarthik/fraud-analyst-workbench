@@ -1,5 +1,7 @@
 # Fraud Analyst Workbench
 
+[![CI](https://github.com/kckarthik/fraud-analyst-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/kckarthik/fraud-analyst-workbench/actions/workflows/ci.yml)
+
 An end-to-end fraud investigation platform: a rules engine that generates a
 realistically noisy alert queue, a LightGBM model that ranks it by risk, SHAP
 reason codes that explain every score in plain language, and a React workbench
@@ -76,9 +78,9 @@ answers "if my team can only review the top N%, how much fraud do we catch?"
 | Top 20% | 39,543 | 69 / 69 | **100%** | 20% |
 
 Every score carries SHAP reason codes rendered in plain language — *"origin
-account was fully drained to zero,"* *"transaction amount was 8.4 standard
-deviations above this account's normal"* — so an analyst sees why an alert
-ranked where it did, and the ranking is auditable rather than a black box.
+account was fully drained to zero,"* *"origin balance doesn't reconcile with
+the transaction amount"* — so an analyst sees why an alert ranked where it did,
+and the ranking is auditable rather than a black box.
 
 ---
 
@@ -150,6 +152,40 @@ The ranked query itself is now 2.7ms. The endpoint that serves it still costs
 ~0.6s, because it also runs an exact `COUNT(*)` over all 988,573 alerts for the
 pagination total — an unindexed scan that dominates the request. Replacing it
 with a cached or estimated count is the obvious next optimisation.
+
+---
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+44 tests, no database required — the suite is pure DataFrame and SQL-parsing
+logic, so CI runs it without a Postgres service container. Two areas get
+disproportionate coverage because that's where the risk is:
+
+**The SQL guard.** An LLM writes SQL and we execute it, so the guard is tested
+in isolation, assuming the read-only role does not exist. Coverage includes
+statement stacking, stacking hidden behind a comment (which defeats a
+regex-based guard), and every route to the hidden `transactions` table —
+direct, CTE, subquery, join, and `UNION` — because that table holds the
+ground-truth label.
+
+**Feature alignment.** The velocity tests are a regression suite for a real
+bug where features landed on the wrong rows. Two properties make them able to
+catch it: assertions are keyed by `transaction_id` rather than positional, and
+the fixture interleaves two accounts in time so global-timestamp order and
+`(account_id, ts)` order genuinely differ. Positional assertions on contiguous
+data would have passed against the broken implementation.
+
+Writing these surfaced a live finding: `amount_zscore` evaluates to 0.0 for
+100% of alerts in the loaded dataset, because PaySim's accounts are nearly all
+singletons and a standard deviation needs two prior points. The feature is
+structurally dead here. It's pinned by a test documenting the behaviour rather
+than quietly patched, since changing it alters feature semantics and requires
+retraining.
 
 ---
 

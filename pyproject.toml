@@ -1,0 +1,25 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+
+[tool.ruff]
+line-length = 100
+# Generated/vendored trees and the local virtualenv are not ours to lint.
+exclude = ["venv", ".venv", "frontend", "model/artifacts"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes — unused imports, undefined names
+    "I",   # import ordering
+    "B",   # bugbear — likely bugs
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line length is handled by the formatter, not worth failing CI over
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests import modules that conftest registers at import time, which reads as
+# an unused/unresolved import to static analysis.
+"tests/*" = ["E402"]

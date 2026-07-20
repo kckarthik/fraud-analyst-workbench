@@ -2,8 +2,8 @@
 Computes the structured_facts feature set for each alert.
 These are the same kind of features that later feed the Phase 2 ranking model.
 """
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
 def _prior_expanding_mean_std(transactions: pd.DataFrame, group_col: str, val_col: str):

@@ -7,7 +7,6 @@ that isn't already in there, plus a one-hot column per rule_id. Label comes
 from the seeded dispositions.
 """
 import pandas as pd
-import numpy as np
 
 CATEGORICAL_COLS = ["transaction_type", "account_type", "card_network", "account_region"]
 

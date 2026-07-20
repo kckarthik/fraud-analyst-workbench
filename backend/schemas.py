@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -20,9 +21,9 @@ class AlertListItem(BaseModel):
     rule_ids: list[str]
     amount: float
     transaction_type: str
-    model_score: Optional[float] = None
-    top_reason: Optional[str] = None
-    decision: Optional[str] = None
+    model_score: float | None = None
+    top_reason: str | None = None
+    decision: str | None = None
 
 
 class AlertListResponse(BaseModel):
@@ -39,22 +40,22 @@ class AlertDetail(BaseModel):
     rule_ids: list[str]
     amount: float
     transaction_type: str
-    counterparty_id: Optional[str] = None
-    account_type: Optional[str] = None
-    card_network: Optional[str] = None
-    region_code: Optional[str] = None
-    model_score: Optional[float] = None
+    counterparty_id: str | None = None
+    account_type: str | None = None
+    card_network: str | None = None
+    region_code: str | None = None
+    model_score: float | None = None
     reason_codes: list[ReasonCode] = []
-    narrative_summary: Optional[str] = None
+    narrative_summary: str | None = None
     structured_facts: dict = {}
-    decision: Optional[str] = None
-    notes: Optional[str] = None
+    decision: str | None = None
+    notes: str | None = None
 
 
 class DispositionCreate(BaseModel):
     decision: str
     analyst_id: str = "web_analyst"
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class ChatRequest(BaseModel):
@@ -63,7 +64,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
-    sql: Optional[str] = None
-    columns: Optional[list[str]] = None
-    rows: Optional[list[dict]] = None
-    error: Optional[str] = None
+    sql: str | None = None
+    columns: list[str] | None = None
+    rows: list[dict] | None = None
+    error: str | None = None

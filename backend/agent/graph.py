@@ -2,19 +2,19 @@
 LangGraph NL2SQL agent: generate SQL -> validate -> execute -> summarize,
 with bounded self-correction retries when validation or execution fails.
 """
-import sys
 import os
-from typing import TypedDict, Optional
+import sys
+from typing import TypedDict
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "db"))
 
-from langgraph.graph import StateGraph, END
+from db_utils import get_readonly_engine
+from langgraph.graph import END, StateGraph
 from sqlalchemy import text
 
-from db_utils import get_readonly_engine
-from .sql_guard import validate_and_cap, SQLGuardError
-from .schema_context import SCHEMA_CONTEXT
 from .llm import generate
+from .schema_context import SCHEMA_CONTEXT
+from .sql_guard import SQLGuardError, validate_and_cap
 
 MAX_ATTEMPTS = 3
 
@@ -36,7 +36,7 @@ ANSWER_SYSTEM = (
 class AgentState(TypedDict):
     question: str
     sql: str
-    error: Optional[str]
+    error: str | None
     columns: list
     rows: list
     answer: str
@@ -73,7 +73,7 @@ def execute_sql(state: AgentState) -> AgentState:
         with engine.connect() as conn:
             result = conn.execute(text(state["sql"]))
             columns = list(result.keys())
-            rows = [dict(zip(columns, row)) for row in result.fetchall()]
+            rows = [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
         return {**state, "columns": columns, "rows": rows, "error": None}
     except Exception as e:
         return {**state, "error": str(e)}

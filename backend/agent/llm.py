@@ -5,6 +5,7 @@ state, they don't need LangChain's model abstractions, and skipping that
 layer keeps the dependency footprint (and RAM footprint) smaller.
 """
 import os
+
 import httpx
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
