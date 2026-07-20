@@ -1,0 +1,12 @@
+# Normalize line endings: store LF in the repo, check out native on Windows.
+# Without this, every file shows as modified when the repo is touched from a
+# different OS.
+* text=auto
+
+# Binary assets — never touch these.
+*.png binary
+*.jpg binary
+*.joblib binary
+
+# Keep shell scripts LF even on Windows checkouts.
+*.sh text eol=lf

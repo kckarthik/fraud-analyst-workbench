@@ -9,6 +9,11 @@ a locally-hosted LLM.
 **Reviewing the top 5% of a 988,000-alert queue catches 98.6% of the fraud —
 a 19.7× lift over working the same queue unranked.**
 
+![Alert queue and investigation panel](docs/screenshots/workbench.png)
+
+*Alerts ranked by model score, with SHAP reason codes translated into plain
+language and the disposition workflow inline.*
+
 ---
 
 ## The problem it models
@@ -128,7 +133,7 @@ Fraud in the top 1,000 went from **1 → 522** of 523.
 | Rules engine | 114s | 9.3s | Vectorized expanding stats via cumsum; dropped FKs during bulk load |
 | Enrichment | 120s | 9.5s | Replaced `groupby.transform(lambda)` with cumsum math |
 | JSONB write-back | 49s | 5.3s | `COPY` to temp table + one `UPDATE...FROM` join |
-| Ranked queue API | 80s | 2.7ms | See below |
+| Ranked queue query | 80s | 2.7ms | See below |
 
 The API fix is the one worth reading. A functional index on the JSONB score
 expression was ignored by the planner once a join and parallel workers were
@@ -140,6 +145,11 @@ segment` on a plain `VACUUM`. One line in `docker-compose.yml`:
 ```yaml
 shm_size: "1gb"
 ```
+
+The ranked query itself is now 2.7ms. The endpoint that serves it still costs
+~0.6s, because it also runs an exact `COUNT(*)` over all 988,573 alerts for the
+pagination total — an unindexed scan that dominates the request. Replacing it
+with a cached or estimated count is the obvious next optimisation.
 
 ---
 
@@ -168,6 +178,12 @@ statements.
 
 Credentials load from a gitignored `.env` and fail loudly when absent — no
 fallback passwords in source.
+
+![Natural-language query agent](docs/screenshots/chat.png)
+
+*The agent generates SQL, validates it, executes it as a read-only role, and
+summarizes the result — with the generated query shown so the analyst can
+check it rather than trust it.*
 
 ---
 
@@ -215,8 +231,8 @@ Serve it:
 
 ```bash
 ollama pull llama3.2:3b
-uvicorn backend.main:app --reload          # :8000
-cd frontend && npm install && npm run dev  # :5173
+cd backend  && uvicorn main:app --reload    # :8000
+cd frontend && npm install && npm run dev   # :5173
 ```
 
 `--sample 1000000` is a deliberate ceiling tuned for an 8GB machine; the full
