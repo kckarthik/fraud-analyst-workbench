@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: fraud-intel-db
+    restart: unless-stopped
+    # Credentials come from .env (gitignored); .env.example is the template.
+    # The ":?" form fails the command with a readable message rather than
+    # silently starting Postgres with an empty password.
+    environment:
+      POSTGRES_DB: ${DB_NAME:?set DB_NAME in .env (copy .env.example)}
+      POSTGRES_USER: ${DB_USER:?set DB_USER in .env (copy .env.example)}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env (copy .env.example)}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    shm_size: "1gb"  # Docker's 64MB default starves Postgres's shared-memory needs
+                      # (parallel query workers, sorts, VACUUM) once real bulk
+                      # operations run — surfaced as "No space left on device" on
+                      # a plain VACUUM at ~1M rows. This is a container-level
+                      # setting; requires `docker compose up` to recreate the
+                      # container (the data volume below is untouched by that).
+    volumes:
+      - fraud_intel_pgdata:/var/lib/postgresql/data
+
+volumes:
+  fraud_intel_pgdata:

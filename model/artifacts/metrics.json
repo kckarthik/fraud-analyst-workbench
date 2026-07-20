@@ -1,0 +1,89 @@
+{
+  "trained_at": "2026-07-19T11:44:39.320946+00:00",
+  "n_train": 790858,
+  "n_test": 197715,
+  "train_fraud_rate": 0.0005740600714666856,
+  "test_fraud_rate": 0.0003489871785145285,
+  "split_timestamp": "2019-01-02 16:00:00",
+  "roc_auc": 0.9985146185091278,
+  "pr_auc": 0.9855564444482472,
+  "queue_depth_report": [
+    {
+      "queue_depth_pct": 5.0,
+      "alerts_reviewed": 9886,
+      "fraud_caught": 68,
+      "fraud_missed": 1,
+      "total_fraud_in_test": 69,
+      "precision_at_depth": 0.0069,
+      "recall_at_depth": 0.9855
+    },
+    {
+      "queue_depth_pct": 10.0,
+      "alerts_reviewed": 19772,
+      "fraud_caught": 68,
+      "fraud_missed": 1,
+      "total_fraud_in_test": 69,
+      "precision_at_depth": 0.0034,
+      "recall_at_depth": 0.9855
+    },
+    {
+      "queue_depth_pct": 20.0,
+      "alerts_reviewed": 39543,
+      "fraud_caught": 69,
+      "fraud_missed": 0,
+      "total_fraud_in_test": 69,
+      "precision_at_depth": 0.0017,
+      "recall_at_depth": 1.0
+    },
+    {
+      "queue_depth_pct": 30.0,
+      "alerts_reviewed": 59314,
+      "fraud_caught": 69,
+      "fraud_missed": 0,
+      "total_fraud_in_test": 69,
+      "precision_at_depth": 0.0012,
+      "recall_at_depth": 1.0
+    },
+    {
+      "queue_depth_pct": 50.0,
+      "alerts_reviewed": 98858,
+      "fraud_caught": 69,
+      "fraud_missed": 0,
+      "total_fraud_in_test": 69,
+      "precision_at_depth": 0.0007,
+      "recall_at_depth": 1.0
+    }
+  ],
+  "random_baseline_report": [
+    {
+      "queue_depth_pct": 5.0,
+      "alerts_reviewed": 9886,
+      "expected_fraud_caught": 3.5,
+      "expected_recall_at_depth": 0.05
+    },
+    {
+      "queue_depth_pct": 10.0,
+      "alerts_reviewed": 19772,
+      "expected_fraud_caught": 6.9,
+      "expected_recall_at_depth": 0.1
+    },
+    {
+      "queue_depth_pct": 20.0,
+      "alerts_reviewed": 39543,
+      "expected_fraud_caught": 13.8,
+      "expected_recall_at_depth": 0.2
+    },
+    {
+      "queue_depth_pct": 30.0,
+      "alerts_reviewed": 59314,
+      "expected_fraud_caught": 20.7,
+      "expected_recall_at_depth": 0.3
+    },
+    {
+      "queue_depth_pct": 50.0,
+      "alerts_reviewed": 98858,
+      "expected_fraud_caught": 34.5,
+      "expected_recall_at_depth": 0.5
+    }
+  ]
+}
