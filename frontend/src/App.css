@@ -766,6 +766,15 @@
   color: var(--text-3);
   font-size: 11.5px;
 }
+/* The generated SQL exists to be checked, not merely displayed — and a
+   single-line box the analyst has to drag sideways defeats that; anything past
+   the fold simply doesn't get read. So the query wraps. The JSON result below
+   keeps horizontal scrolling, where wrapping would destroy the indentation
+   that makes it scannable. */
+.sql-details pre:not(.result-json) {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .result-json {
   max-height: 220px;
   overflow: auto;
