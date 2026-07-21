@@ -2,11 +2,16 @@
 App-layer guard for LLM-generated SQL. Defense in depth alongside the
 read-only Postgres role (db/setup_readonly_role.sql) — even if a check here
 had a gap, that role physically cannot write or see transactions.is_fraud.
+
+Note the allow-list names analyst_dispositions, not dispositions: the raw table
+still holds the ground-truth labels backfilled during seeding, so allowing it
+here would hand back the answer key that revoking transactions.is_fraud exists
+to withhold.
 """
 import sqlglot
 from sqlglot import exp
 
-ALLOWED_TABLES = {"accounts", "analyst_transactions", "alerts", "dispositions", "rules"}
+ALLOWED_TABLES = {"accounts", "analyst_transactions", "alerts", "analyst_dispositions", "rules"}
 BLOCKED_FUNCS = {"pg_sleep", "pg_read_file", "dblink", "pg_terminate_backend", "lo_import", "lo_export"}
 MAX_LIMIT = 200
 

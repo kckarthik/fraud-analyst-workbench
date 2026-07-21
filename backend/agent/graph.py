@@ -3,6 +3,7 @@ LangGraph NL2SQL agent: generate SQL -> validate -> execute -> summarize,
 with bounded self-correction retries when validation or execution fails.
 """
 import os
+import re
 import sys
 from typing import TypedDict
 
@@ -14,7 +15,7 @@ from sqlalchemy import text
 
 from .llm import generate
 from .schema_context import SCHEMA_CONTEXT
-from .sql_guard import SQLGuardError, validate_and_cap
+from .sql_guard import MAX_LIMIT, SQLGuardError, validate_and_cap
 
 MAX_ATTEMPTS = 3
 
@@ -29,7 +30,13 @@ ANSWER_SYSTEM = (
     "column names, or clauses such as LIMIT/GROUP BY. In particular the "
     "guard-injected LIMIT is not a finding — small models otherwise report "
     "'LIMIT 200' as though 200 rows were returned. Do not speculate beyond "
-    "the rows you were given."
+    "the rows you were given.\n"
+    "If the result is zero, or no rows came back, say so plainly and stop. "
+    "Never report a non-zero figure alongside a zero result: asked for a count "
+    "that came back 0, a small model will happily open with 'there is only one' "
+    "and then quote the 0 in the next clause. Zero is a real, correct answer "
+    "here — most alerts are unreviewed, so counts over analyst decisions are "
+    "legitimately empty."
 )
 
 
@@ -41,6 +48,24 @@ class AgentState(TypedDict):
     rows: list
     answer: str
     attempts: int
+
+
+# Matches only a trailing LIMIT at exactly the guard's cap.
+_GUARD_LIMIT_RE = re.compile(rf"\s+LIMIT\s+{MAX_LIMIT}\s*$", re.IGNORECASE)
+
+
+def _sql_for_summary(sql: str) -> str:
+    """
+    Drop the guard's injected LIMIT before the query is shown to the summarizer.
+
+    That clause comes from validate_and_cap, not from the user, and a small
+    model reports it as a finding — "the count is based on a sample of 200
+    rows" — which is wrong twice over on an aggregate, where the cap cannot
+    affect the result at all. A LIMIT the user genuinely asked for (any value
+    other than the cap) is left in place, because there it really does bound
+    what the answer can claim.
+    """
+    return _GUARD_LIMIT_RE.sub("", sql)
 
 
 def _strip_code_fence(text_: str) -> str:
@@ -83,12 +108,32 @@ def summarize(state: AgentState) -> AgentState:
     if state.get("error"):
         return {**state, "answer": f"I couldn't answer that after {state['attempts']} attempt(s): {state['error']}"}
 
-    preview = state["rows"][:20]
+    rows, columns = state["rows"], state["columns"]
+
+    # A scalar aggregate is described by its VALUE and nothing else — no row
+    # count, and no quantity words anywhere near it. The original phrasing
+    # ("showing up to 20 of 1 total") left a stray "1" beside the question and a
+    # 3B model read it as the answer: asked how many confirmed frauds there
+    # were, handed a single row holding 0, it replied "there is only one
+    # confirmed fraud alert" and then quoted the 0 in the next clause. Rewriting
+    # it as "produced one value" did not help — it simply latched onto that
+    # "one" instead. Any counting word in this string becomes a candidate
+    # answer, so the scalar case now states the value bare.
+    if len(rows) == 1 and len(columns) == 1:
+        result_block = f"Result: {columns[0]} = {rows[0][columns[0]]}"
+    elif not rows:
+        result_block = "The query returned no rows at all."
+    else:
+        result_block = (
+            f"Result columns: {columns}\n"
+            f"The query matched {len(rows)} row(s). Here are up to 20 of them "
+            f"(this is a sample of the data, not the answer): {rows[:20]}"
+        )
+
     prompt = (
         f"Question: {state['question']}\n"
-        f"SQL used: {state['sql']}\n"
-        f"Result columns: {state['columns']}\n"
-        f"Result rows (showing up to 20 of {len(state['rows'])} total): {preview}\n\n"
+        f"SQL used: {_sql_for_summary(state['sql'])}\n"
+        f"{result_block}\n\n"
         "Answer the question in 1-3 plain-language sentences, citing concrete numbers from the results."
     )
     answer = generate(prompt, system=ANSWER_SYSTEM)

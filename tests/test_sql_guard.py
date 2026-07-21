@@ -162,9 +162,9 @@ def test_preserves_limit_below_maximum():
 @pytest.mark.parametrize(
     "sql",
     [
-        "SELECT COUNT(*) FROM dispositions WHERE decision = 'fraud'",
+        "SELECT COUNT(*) FROM analyst_dispositions WHERE decision = 'fraud'",
         "SELECT alert_id, model_score FROM alerts ORDER BY model_score DESC",
-        "SELECT at.transaction_type, COUNT(*) FROM dispositions d "
+        "SELECT at.transaction_type, COUNT(*) FROM analyst_dispositions d "
         "JOIN alerts a ON a.alert_id = d.alert_id "
         "JOIN analyst_transactions at ON at.transaction_id = a.transaction_id "
         "WHERE d.decision = 'fraud' GROUP BY at.transaction_type",
@@ -174,3 +174,27 @@ def test_preserves_limit_below_maximum():
 )
 def test_allows_legitimate_queries(sql):
     assert validate_and_cap(sql).strip()
+
+
+# --------------------------------------------------------------------------
+# The raw dispositions table is the answer key
+# --------------------------------------------------------------------------
+# rules/engine.py backfills a disposition for every alert straight from the
+# dataset's is_fraud label. Blocking transactions.is_fraud while leaving that
+# table reachable is theatre — the label is simply read from the other copy,
+# which is exactly what the agent did in practice. These pin the block on every
+# route the transactions tests already cover.
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT COUNT(*) FROM dispositions WHERE decision = 'fraud'",
+        "SELECT d.decision FROM dispositions d WHERE d.alert_id = 1",
+        "WITH x AS (SELECT decision FROM dispositions) SELECT * FROM x",
+        "SELECT (SELECT decision FROM dispositions WHERE alert_id = a.alert_id) FROM alerts a",
+        "SELECT a.alert_id FROM alerts a JOIN dispositions d ON d.alert_id = a.alert_id",
+        "SELECT decision FROM analyst_dispositions UNION ALL SELECT decision FROM dispositions",
+    ],
+)
+def test_blocks_raw_dispositions_table(sql):
+    with pytest.raises(SQLGuardError):
+        validate_and_cap(sql)

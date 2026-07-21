@@ -216,7 +216,9 @@ in isolation, assuming the read-only role does not exist. Coverage includes
 statement stacking, stacking hidden behind a comment (which defeats a
 regex-based guard), and every route to the hidden `transactions` table —
 direct, CTE, subquery, join, and `UNION` — because that table holds the
-ground-truth label.
+ground-truth label. The raw `dispositions` table gets the identical treatment,
+for the identical reason: it holds a verbatim copy of that label, so blocking
+one and not the other blocks nothing.
 
 **Feature alignment.** The velocity tests are a regression suite for a real
 bug where features landed on the wrong rows. Two properties make them able to
@@ -249,15 +251,36 @@ an obvious injection surface. Two independent layers, either of which holds
 alone:
 
 **1. Least-privilege database role.** The agent connects as
-`fraud_intel_readonly`, which holds `SELECT` only and reads through a view that
-excludes `is_fraud` — the ground-truth label. Even a perfect prompt injection
-cannot write, and cannot read the answer key.
+`fraud_intel_readonly`, which holds `SELECT` only and reads through views that
+exclude the ground-truth label. Even a perfect prompt injection cannot write,
+and cannot read the answer key.
 
 ```sql
-GRANT SELECT ON accounts, alerts, dispositions, rules, analyst_transactions
+GRANT SELECT ON accounts, alerts, rules, analyst_transactions, analyst_dispositions
   TO fraud_intel_readonly;
 REVOKE ALL ON transactions FROM fraud_intel_readonly;
+REVOKE ALL ON dispositions FROM fraud_intel_readonly;
 ```
+
+There are **two** views there, and the second one is the interesting one.
+Revoking `transactions.is_fraud` was decorative on its own: `rules/engine.py`
+backfills a disposition for every alert straight from that same label, so the
+answer key existed in a second table the role was explicitly granted. Denied
+the column, the agent could still recover the label for any alert with
+`SELECT decision FROM dispositions WHERE alert_id = ...`.
+
+It was not a hypothetical. Asked *"how many confirmed fraud alerts are there?"*,
+the agent wrote `SELECT COUNT(*) FROM dispositions WHERE decision = 'fraud'`
+and read back 523 — the exact figure the revocation was meant to withhold.
+`analyst_dispositions` filters the seeded rows out, so the role now sees only
+decisions a human actually made, and the same question returns *"there are no
+confirmed fraud alerts"* — which is true: nothing has been reviewed yet.
+
+Worth stating how it was found, because reading the grants would not have done
+it. The grant list looks correct; `dispositions` is a legitimate analyst-facing
+table and belongs there. What exposed it was connecting as the role and trying
+to reach the label by every route available, which is the only way this class
+of leak shows up.
 
 **2. AST-based SQL guard.** Generated SQL is parsed with `sqlglot` and rejected
 unless it is a single `SELECT` over allow-listed tables, with dangerous

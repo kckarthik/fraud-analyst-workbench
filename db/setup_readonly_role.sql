@@ -41,7 +41,27 @@ SELECT transaction_id, account_id, ts, amount, currency, transaction_type,
        orig_balance_before, orig_balance_after, dest_balance_before, dest_balance_after
 FROM transactions;
 
+-- Analyst-facing dispositions: excludes the rows rules/engine.py backfills from
+-- the dataset's is_fraud label under analyst_id 'seed_ground_truth'.
+--
+-- Without this the label revocation below is decorative. Those seeded rows are
+-- a verbatim copy of transactions.is_fraud for every alert, so an agent denied
+-- the raw column could still recover the answer for any alert with
+--   SELECT decision FROM dispositions WHERE alert_id = ...
+-- and in practice did: asked "how many confirmed fraud alerts are there", it
+-- wrote COUNT(*) FROM dispositions WHERE decision='fraud' and read back 523.
+-- IS DISTINCT FROM, not <>, so a NULL analyst_id counts as a real review rather
+-- than being silently swallowed.
+CREATE OR REPLACE VIEW analyst_dispositions AS
+SELECT disposition_id, alert_id, analyst_id, decision, notes, decided_at
+FROM dispositions
+WHERE analyst_id IS DISTINCT FROM 'seed_ground_truth';
+
 GRANT CONNECT ON DATABASE fraud_intel TO fraud_intel_readonly;
 GRANT USAGE ON SCHEMA public TO fraud_intel_readonly;
-GRANT SELECT ON accounts, alerts, dispositions, rules, analyst_transactions TO fraud_intel_readonly;
+GRANT SELECT ON accounts, alerts, rules, analyst_transactions, analyst_dispositions
+  TO fraud_intel_readonly;
 REVOKE ALL ON transactions FROM fraud_intel_readonly;
+-- Explicit, and not redundant: earlier revisions granted SELECT on dispositions,
+-- so re-running this file against an existing database must take it back.
+REVOKE ALL ON dispositions FROM fraud_intel_readonly;
