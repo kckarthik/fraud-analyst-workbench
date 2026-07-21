@@ -76,14 +76,14 @@ def load_data(engine):
 
 
 def register_rules(engine):
+    """Write the rule catalogue once; a re-run of the engine leaves it alone."""
+    if _rules_exist(engine):
+        return
     rows = [
         {"rule_id": rid, "rule_name": rid.replace("_", " ").title(), "description": desc}
         for rid, (_, desc, _) in RULE_REGISTRY.items()
     ]
-    df = pd.DataFrame(rows)
-    df.to_sql("rules", engine, if_exists="append", index=False,
-              method="multi", index_label=None,
-              dtype=None) if not _rules_exist(engine) else None
+    pd.DataFrame(rows).to_sql("rules", engine, if_exists="append", index=False, method="multi")
 
 
 def _rules_exist(engine) -> bool:

@@ -32,3 +32,7 @@ def _load(module_name: str, relative_path: str):
 
 # Registered at import time so test modules can `import enrichment_features`.
 _load("enrichment_features", "enrichment/features.py")
+# model/evaluate.py is pure numpy/pandas with no DB dependency, but it lives
+# beside model/features.py, which collides with enrichment/features.py — so it
+# gets the same explicit-path treatment rather than a sys.path insert.
+_load("model_evaluate", "model/evaluate.py")

@@ -28,6 +28,11 @@ class AlertListItem(BaseModel):
 
 class AlertListResponse(BaseModel):
     total: int
+    # True when `total` is the planner's row estimate rather than an exact count
+    # (see routers/alerts.py:_queue_total). The UI renders it as "~988,600" so a
+    # figure that can drift by a percent or two is never shown as though it were
+    # authoritative.
+    total_is_estimate: bool = False
     items: list[AlertListItem]
 
 

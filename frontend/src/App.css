@@ -302,7 +302,9 @@
 .risk-val {
   font-size: 12px;
   font-weight: 600;
-  width: 22px;
+  /* fits "100.00" — scores render to 2dp so the top of the queue stays ordered
+     visually instead of collapsing into identical whole numbers */
+  width: 42px;
   text-align: right;
 }
 .risk-high .risk-fill { background: var(--risk-high); }
@@ -444,10 +446,13 @@
   padding-left: 16px;
 }
 .hero-score-val {
-  font-size: 34px;
+  /* 28px rather than 34px: the score is now 2dp ("99.87"), so the wider string
+     needs to stay on one line next to the amount in the hero row */
+  font-size: 28px;
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.03em;
+  white-space: nowrap;
 }
 .risk-high .hero-score-val { color: var(--risk-high); }
 .risk-mid .hero-score-val { color: var(--risk-mid); }

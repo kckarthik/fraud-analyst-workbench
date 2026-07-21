@@ -22,6 +22,7 @@ export interface AlertListItem {
 
 export interface AlertListResponse {
   total: number;
+  total_is_estimate: boolean;
   items: AlertListItem[];
 }
 

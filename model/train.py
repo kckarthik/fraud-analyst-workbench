@@ -19,7 +19,13 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 from db_utils import get_engine
-from evaluate import queue_depth_report, random_baseline_report
+from evaluate import (
+    amount_sorted_baseline_report,
+    queue_depth_report,
+    queue_depth_report_at_k,
+    random_baseline_report,
+    wilson_interval,
+)
 from features import build_feature_matrix
 from sklearn.metrics import average_precision_score, roc_auc_score
 
@@ -82,8 +88,13 @@ def main():
                          help="Fraction of (chronologically latest) alerts held out as the test set")
     parser.add_argument("--depths", type=str, default="0.05,0.10,0.20,0.30,0.50",
                          help="Comma-separated queue-depth fractions to report precision/recall at")
+    parser.add_argument("--top-k", type=str, default="100,250,500,1000,5000",
+                         help="Comma-separated absolute queue depths (number of alerts reviewed) to report "
+                              "recall at — the operationally meaningful cutoffs, since a team works a fixed "
+                              "number of alerts per shift, not a fixed percentage of the queue")
     args = parser.parse_args()
     depths = tuple(float(d) for d in args.depths.split(","))
+    top_k = tuple(int(k) for k in args.top_k.split(","))
 
     engine = get_engine()
     print("Building feature matrix from alerts.enrichment + raw transaction/account data ...")
@@ -111,11 +122,29 @@ def main():
     ap = average_precision_score(y_test, y_score) if has_both_classes else float("nan")
     print(f"\nTest ROC-AUC: {auc:.4f}  |  Test PR-AUC: {ap:.4f}")
 
+    n_test_fraud = int(y_test.sum())
+    if 0 < n_test_fraud < 100:
+        lo, hi = wilson_interval(n_test_fraud - 1, n_test_fraud)
+        print(f"\nNOTE: the test split contains only {n_test_fraud} confirmed-fraud alerts, so every recall "
+              f"figure below is a small-sample estimate. One additional miss moves recall by "
+              f"{100 / n_test_fraud:.1f} points, and missing a single alert gives a 95% interval of "
+              f"[{lo:.1%}, {hi:.1%}]. Quote these as counts (\"{n_test_fraud - 1} of {n_test_fraud}\"), "
+              f"not as three-significant-figure percentages.")
+
+    report_at_k = queue_depth_report_at_k(y_test, y_score, top_k)
+    amount_baseline = amount_sorted_baseline_report(y_test, X_test["sf_amount"], top_k)
+    print("\nRecall at absolute queue depth — 'if the team works the top K alerts, how much fraud is caught?'")
+    print("This is the operational number: a team works a few hundred alerts a shift, not a % of the queue.")
+    print(report_at_k.merge(amount_baseline, on="top_k", how="left").to_string(index=False))
+
     report = queue_depth_report(y_test, y_score, depths)
     baseline = random_baseline_report(y_test, depths)
-    print("\nQueue-depth precision/recall (alerts worked in descending model-score order):")
+    print("\nQueue-depth precision/recall by percentage depth (retained for reference — on a queue this "
+          "large a 5% cutoff is tens of thousands of alerts, so these rows overstate the review effort "
+          "the ranking actually requires):")
     print(report.to_string(index=False))
-    print("\nUnranked (random-order) baseline for comparison — today's implicit baseline:")
+    print("\nUnranked (random-order) baseline — a floor, not a realistic comparator; a team without a "
+          "model sorts by amount (see the by-amount columns above), it does not work at random:")
     print(baseline.to_string(index=False))
 
     os.makedirs(ARTIFACT_DIR, exist_ok=True)
@@ -132,6 +161,9 @@ def main():
         "split_timestamp": str(split_ts),
         "roc_auc": auc,
         "pr_auc": ap,
+        "n_test_fraud": n_test_fraud,
+        "queue_depth_report_at_k": report_at_k.to_dict(orient="records"),
+        "amount_sorted_baseline_at_k": amount_baseline.to_dict(orient="records"),
         "queue_depth_report": report.to_dict(orient="records"),
         "random_baseline_report": baseline.to_dict(orient="records"),
     }

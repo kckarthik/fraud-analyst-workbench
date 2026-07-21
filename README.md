@@ -8,8 +8,9 @@ reason codes that explain every score in plain language, and a React workbench
 where an analyst works the queue and asks questions in natural language against
 a locally-hosted LLM.
 
-**Reviewing the top 5% of a 988,000-alert queue catches 98.6% of the fraud —
-a 19.7× lift over working the same queue unranked.**
+**On a held-out queue of 197,715 later alerts, the ranking puts 68 of the 69
+confirmed-fraud alerts inside the top 5% — and a PR-AUC of 0.986 says they
+cluster far nearer the top than that cutoff shows.**
 
 ![Alert queue and investigation panel](docs/screenshots/workbench.png)
 
@@ -68,14 +69,33 @@ yesterday.
 | ROC-AUC | 0.9985 |
 | PR-AUC | 0.9856 |
 
-**Queue-depth performance** — the metric that matters operationally, because it
-answers "if my team can only review the top N%, how much fraud do we catch?"
+**Queue-depth performance** — how much fraud is caught if analysts work the
+ranked queue and stop at a cutoff.
 
 | Review depth | Alerts reviewed | Fraud caught | Recall | Unranked baseline |
 |---|---|---|---|---|
-| Top 5% | 9,886 | 68 / 69 | **98.6%** | 5% |
-| Top 10% | 19,772 | 68 / 69 | **98.6%** | 10% |
-| Top 20% | 39,543 | 69 / 69 | **100%** | 20% |
+| Top 5% | 9,886 | 68 / 69 | 98.6% | 5% |
+| Top 10% | 19,772 | 68 / 69 | 98.6% | 10% |
+| Top 20% | 39,543 | 69 / 69 | 100% | 20% |
+
+Two caveats on reading that table, both of which cut against it:
+
+- **Percentage depths are the wrong unit at this queue size.** 5% of this queue
+  is 9,886 alerts. No team reviews that in a day, so "98.6% at top 5%" doesn't
+  describe a shift anyone works — and precision at that depth is 0.7%. The
+  useful cutoffs are absolute: recall at the top 100 / 250 / 500 alerts, which
+  is what a team actually gets through. `train.py` now reports those
+  (`--top-k`), alongside a queue sorted by transaction amount — what a team
+  without a model really does, and a fairer comparator than random order.
+  Because PR-AUC is 0.986, the fraud is concentrated much higher than the 5%
+  row implies; the percentage table understates the result while appearing to
+  flatter it.
+- **69 positives is a small denominator.** 68/69 is "98.6%" only to the extent
+  that three significant figures mean anything on 69 samples — the 95% Wilson
+  interval runs from roughly 92% to 99.7%, and one more miss moves the point
+  estimate by 1.4 points. The reports now carry that interval, and `train.py`
+  prints a warning when the test split has fewer than 100 confirmed-fraud
+  alerts. Read the counts, not the decimals.
 
 Every score carries SHAP reason codes rendered in plain language — *"origin
 account was fully drained to zero,"* *"origin balance doesn't reconcile with
@@ -148,10 +168,15 @@ segment` on a plain `VACUUM`. One line in `docker-compose.yml`:
 shm_size: "1gb"
 ```
 
-The ranked query itself is now 2.7ms. The endpoint that serves it still costs
-~0.6s, because it also runs an exact `COUNT(*)` over all 988,573 alerts for the
-pagination total — an unindexed scan that dominates the request. Replacing it
-with a cached or estimated count is the obvious next optimisation.
+The ranked query itself is now 2.7ms. That left the endpoint dominated by
+something far dumber: an exact `COUNT(*)` over all 988,573 alerts, run on every
+request to render "of N" in the pagination footer — an unindexed scan costing
+more than everything else combined. It now asks the planner for its row
+estimate instead (`EXPLAIN (FORMAT JSON)`, which respects the same filters),
+and falls back to an exact count only when the estimate is small enough that
+counting is cheap. So filtered views stay precise, the full-queue total is
+approximate, and the response marks which one it returned so the UI can render
+`~988,600` rather than presenting an estimate as fact.
 
 ---
 
@@ -162,8 +187,8 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-44 tests, no database required — the suite is pure DataFrame and SQL-parsing
-logic, so CI runs it without a Postgres service container. Two areas get
+59 tests, no database required — the suite is pure DataFrame and SQL-parsing
+logic, so CI runs it without a Postgres service container. Three areas get
 disproportionate coverage because that's where the risk is:
 
 **The SQL guard.** An LLM writes SQL and we execute it, so the guard is tested
@@ -179,6 +204,14 @@ catch it: assertions are keyed by `transaction_id` rather than positional, and
 the fixture interleaves two accounts in time so global-timestamp order and
 `(account_id, ts)` order genuinely differ. Positional assertions on contiguous
 data would have passed against the broken implementation.
+
+**Queue-depth reporting.** The numbers in the Results section are read straight
+off this code, and its failure mode isn't a crash — it's a plausible number
+that overstates the result. So the tests pin the off-by-one at the cutoff (does
+"top K" include the Kth alert?), tie-breaking (thousands of alerts here score
+≥0.999, so an unstable sort would make the report vary between runs), and the
+guard against emitting a duplicate full-queue row for every K past the end,
+which would render as a run of 100% rows implying deeper review kept helping.
 
 Writing these surfaced a live finding: `amount_zscore` evaluates to 0.0 for
 100% of alerts in the loaded dataset, because PaySim's accounts are nearly all
@@ -289,7 +322,12 @@ end-to-end. Two things worth knowing when reading the metrics:
   domain feature engineering — not the headline number.
 - **Labels are the dataset's ground truth**, backfilled as analyst
   dispositions, so the disposition workflow is modelled end-to-end without
-  waiting on real review history.
+  waiting on real review history. Those seeded rows are written under
+  `analyst_id = 'seed_ground_truth'` and the API filters them out of everything
+  it serves: they are the training label, but surfacing them in the workbench
+  would show an analyst the answer before they investigated, and would mark
+  every untouched alert as already decided. The model reads them; the analyst
+  never does.
 
 `device_id`, `ip_proxy`, and `region_code` have no PaySim equivalent, so three
 of the ten rules are skipped under this dataset and fire under IEEE-CIS

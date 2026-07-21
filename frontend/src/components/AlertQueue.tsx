@@ -18,6 +18,7 @@ interface Props {
 export default function AlertQueue({ selectedId, onSelect, refreshKey }: Props) {
   const [items, setItems] = useState<AlertListItem[]>([]);
   const [total, setTotal] = useState(0);
+  const [totalIsEstimate, setTotalIsEstimate] = useState(false);
   const [page, setPage] = useState(0);
   const [statusFilter, setStatusFilter] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,18 +31,24 @@ export default function AlertQueue({ selectedId, onSelect, refreshKey }: Props) 
       .then((res) => {
         setItems(res.items);
         setTotal(res.total);
+        setTotalIsEstimate(res.total_is_estimate);
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, [page, statusFilter, refreshKey]);
 
   const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+  // "~" whenever the backend returned a planner estimate instead of an exact
+  // COUNT(*), so an approximate figure is never presented as an exact one.
+  const totalLabel = `${totalIsEstimate ? '~' : ''}${total.toLocaleString()}`;
 
   return (
     <div className="panel queue-panel">
       <div className="panel-toolbar">
         <div className="toolbar-left">
-          <span className="count-chip">{total.toLocaleString()}</span>
+          <span className="count-chip" title={totalIsEstimate ? 'Estimated row count' : undefined}>
+            {totalLabel}
+          </span>
           <span className="toolbar-label">ranked alerts</span>
         </div>
         <div className="segmented">
@@ -118,7 +125,7 @@ export default function AlertQueue({ selectedId, onSelect, refreshKey }: Props) 
 
       <div className="panel-footer">
         <span className="footer-info">
-          Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total.toLocaleString()}
+          Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {totalLabel}
         </span>
         <div className="pager">
           <button disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
@@ -138,14 +145,20 @@ export default function AlertQueue({ selectedId, onSelect, refreshKey }: Props) 
 
 function RiskMeter({ score }: { score: number | null }) {
   if (score === null) return <span className="risk-na">—</span>;
-  const pct = Math.round(score * 100);
+  // Two decimals, not Math.round. The model deliberately spreads scores across
+  // (0,1) so the queue can be ordered, but rounding to a whole number collapses
+  // everything >= 0.995 back to "100" — which is the same saturation the
+  // scale_pos_weight fix removed, reintroduced at the display layer. At the top
+  // of a 988k queue that made thousands of consecutive rows look identical and
+  // gave the analyst no reason to trust the ordering.
+  const pct = score * 100;
   const level = score >= 0.9 ? 'high' : score >= 0.5 ? 'mid' : 'low';
   return (
     <div className={`risk risk-${level}`} title={String(score)}>
       <div className="risk-track">
         <span className="risk-fill" style={{ width: `${Math.max(pct, 3)}%` }} />
       </div>
-      <span className="risk-val tabular">{pct}</span>
+      <span className="risk-val tabular">{pct.toFixed(2)}</span>
     </div>
   );
 }

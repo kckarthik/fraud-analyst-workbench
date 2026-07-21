@@ -61,7 +61,9 @@ export default function AlertDetailPanel({ alertId, onDispositionSaved }: Props)
     }
   }
 
-  const pct = detail.model_score !== null ? Math.round(detail.model_score * 100) : null;
+  // Two decimals — see RiskMeter in AlertQueue.tsx: rounding saturates the top
+  // of the queue back to a wall of identical 100s.
+  const pct = detail.model_score !== null ? (detail.model_score * 100).toFixed(2) : null;
   const level = detail.model_score === null ? 'na' : detail.model_score >= 0.9 ? 'high' : detail.model_score >= 0.5 ? 'mid' : 'low';
   const maxAbs = Math.max(1e-9, ...detail.reason_codes.map((r) => Math.abs(r.shap_value)));
 
