@@ -145,12 +145,12 @@ export default function AlertQueue({ selectedId, onSelect, refreshKey }: Props) 
 
 function RiskMeter({ score }: { score: number | null }) {
   if (score === null) return <span className="risk-na">—</span>;
-  // Two decimals, not Math.round. The model deliberately spreads scores across
-  // (0,1) so the queue can be ordered, but rounding to a whole number collapses
-  // everything >= 0.995 back to "100" — which is the same saturation the
-  // scale_pos_weight fix removed, reintroduced at the display layer. At the top
-  // of a 988k queue that made thousands of consecutive rows look identical and
-  // gave the analyst no reason to trust the ordering.
+  // Two decimals rather than Math.round, which collapsed everything >= 0.995
+  // into "100". Note this does not differentiate the very top of the queue:
+  // explain.py stores scores rounded to 4dp, so ~495 alerts sit at exactly 1.0
+  // and still render identically. That block is 100% confirmed fraud, so there
+  // is nothing to order within it — the extra precision matters further down,
+  // where scores genuinely spread and the analyst is making a judgement call.
   const pct = score * 100;
   const level = score >= 0.9 ? 'high' : score >= 0.5 ? 'mid' : 'low';
   return (

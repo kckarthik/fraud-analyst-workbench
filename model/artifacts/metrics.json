@@ -1,5 +1,5 @@
 {
-  "trained_at": "2026-07-19T11:44:39.320946+00:00",
+  "trained_at": "2026-07-21T04:34:40.415037+00:00",
   "n_train": 790858,
   "n_test": 197715,
   "train_fraud_rate": 0.0005740600714666856,
@@ -7,6 +7,96 @@
   "split_timestamp": "2019-01-02 16:00:00",
   "roc_auc": 0.9985146185091278,
   "pr_auc": 0.9855564444482472,
+  "n_test_fraud": 69,
+  "queue_depth_report_at_k": [
+    {
+      "top_k": 100,
+      "pct_of_queue": 0.051,
+      "fraud_caught": 68,
+      "fraud_missed": 1,
+      "total_fraud_in_test": 69,
+      "precision_at_k": 0.68,
+      "recall_at_k": 0.9855,
+      "recall_ci_low": 0.9224,
+      "recall_ci_high": 0.9974,
+      "random_expected_caught": 0.03
+    },
+    {
+      "top_k": 250,
+      "pct_of_queue": 0.126,
+      "fraud_caught": 68,
+      "fraud_missed": 1,
+      "total_fraud_in_test": 69,
+      "precision_at_k": 0.272,
+      "recall_at_k": 0.9855,
+      "recall_ci_low": 0.9224,
+      "recall_ci_high": 0.9974,
+      "random_expected_caught": 0.09
+    },
+    {
+      "top_k": 500,
+      "pct_of_queue": 0.253,
+      "fraud_caught": 68,
+      "fraud_missed": 1,
+      "total_fraud_in_test": 69,
+      "precision_at_k": 0.136,
+      "recall_at_k": 0.9855,
+      "recall_ci_low": 0.9224,
+      "recall_ci_high": 0.9974,
+      "random_expected_caught": 0.17
+    },
+    {
+      "top_k": 1000,
+      "pct_of_queue": 0.506,
+      "fraud_caught": 68,
+      "fraud_missed": 1,
+      "total_fraud_in_test": 69,
+      "precision_at_k": 0.068,
+      "recall_at_k": 0.9855,
+      "recall_ci_low": 0.9224,
+      "recall_ci_high": 0.9974,
+      "random_expected_caught": 0.35
+    },
+    {
+      "top_k": 5000,
+      "pct_of_queue": 2.529,
+      "fraud_caught": 68,
+      "fraud_missed": 1,
+      "total_fraud_in_test": 69,
+      "precision_at_k": 0.0136,
+      "recall_at_k": 0.9855,
+      "recall_ci_low": 0.9224,
+      "recall_ci_high": 0.9974,
+      "random_expected_caught": 1.74
+    }
+  ],
+  "amount_sorted_baseline_at_k": [
+    {
+      "top_k": 100,
+      "fraud_caught_by_amount": 14,
+      "recall_by_amount": 0.2029
+    },
+    {
+      "top_k": 250,
+      "fraud_caught_by_amount": 14,
+      "recall_by_amount": 0.2029
+    },
+    {
+      "top_k": 500,
+      "fraud_caught_by_amount": 18,
+      "recall_by_amount": 0.2609
+    },
+    {
+      "top_k": 1000,
+      "fraud_caught_by_amount": 22,
+      "recall_by_amount": 0.3188
+    },
+    {
+      "top_k": 5000,
+      "fraud_caught_by_amount": 27,
+      "recall_by_amount": 0.3913
+    }
+  ],
   "queue_depth_report": [
     {
       "queue_depth_pct": 5.0,

@@ -167,6 +167,17 @@ def main(chunk_size: int = 200_000):
             "WHERE enrichment ? 'model_score'"
         ))
 
+    # The UPDATE above just rewrote model_score on every row, and until the
+    # planner re-samples the table its statistics still describe the column as
+    # entirely NULL. That makes it estimate ~0 rows for the queue's
+    # "model_score IS NOT NULL" predicate, which silently defeats the estimated
+    # count in routers/alerts.py — the endpoint falls back to an exact COUNT(*)
+    # over ~1M rows precisely when the table is at its largest. Autovacuum fixes
+    # this eventually; ANALYZE fixes it now, and costs seconds.
+    print("Refreshing planner statistics on alerts (ANALYZE) ...")
+    with engine.begin() as conn:
+        conn.execute(text("ANALYZE alerts"))
+
     print("Done.")
 
 

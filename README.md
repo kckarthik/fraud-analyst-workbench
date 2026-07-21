@@ -8,9 +8,10 @@ reason codes that explain every score in plain language, and a React workbench
 where an analyst works the queue and asks questions in natural language against
 a locally-hosted LLM.
 
-**On a held-out queue of 197,715 later alerts, the ranking puts 68 of the 69
-confirmed-fraud alerts inside the top 5% — and a PR-AUC of 0.986 says they
-cluster far nearer the top than that cutoff shows.**
+**The first 100 alerts of the ranked queue hold 68 of the 69 confirmed frauds
+in a 197,715-alert test set — 68% of that first screenful is fraud. Worked by
+transaction amount instead, which is what a team without a model does, the same
+100 alerts catch 14.**
 
 ![Alert queue and investigation panel](docs/screenshots/workbench.png)
 
@@ -69,33 +70,43 @@ yesterday.
 | ROC-AUC | 0.9985 |
 | PR-AUC | 0.9856 |
 
-**Queue-depth performance** — how much fraud is caught if analysts work the
-ranked queue and stop at a cutoff.
+**Queue-depth performance.** Cutoffs are absolute, not percentages, because a
+team works a fixed number of alerts per shift — not a fixed fraction of a queue
+whose size they don't control. The last column is the same queue sorted by
+transaction amount descending: the ordering a team without a model actually
+uses, and a fairer comparator than random order.
 
-| Review depth | Alerts reviewed | Fraud caught | Recall | Unranked baseline |
-|---|---|---|---|---|
-| Top 5% | 9,886 | 68 / 69 | 98.6% | 5% |
-| Top 10% | 19,772 | 68 / 69 | 98.6% | 10% |
-| Top 20% | 39,543 | 69 / 69 | 100% | 20% |
+| Alerts reviewed | Fraud caught | Precision | Sorted by amount instead |
+|---|---|---|---|
+| **Top 100** | **68 / 69** | **68.0%** | 14 / 69 |
+| Top 250 | 68 / 69 | 27.2% | 14 / 69 |
+| Top 500 | 68 / 69 | 13.6% | 18 / 69 |
+| Top 1,000 | 68 / 69 | 6.8% | 22 / 69 |
 
-Two caveats on reading that table, both of which cut against it:
+The whole result sits in the first hundred alerts. Everything catchable is
+already caught there, so the deeper rows only dilute precision — reviewing
+1,000 instead of 100 costs 10× the effort and finds nothing further.
 
-- **Percentage depths are the wrong unit at this queue size.** 5% of this queue
-  is 9,886 alerts. No team reviews that in a day, so "98.6% at top 5%" doesn't
-  describe a shift anyone works — and precision at that depth is 0.7%. The
-  useful cutoffs are absolute: recall at the top 100 / 250 / 500 alerts, which
-  is what a team actually gets through. `train.py` now reports those
-  (`--top-k`), alongside a queue sorted by transaction amount — what a team
-  without a model really does, and a fairer comparator than random order.
-  Because PR-AUC is 0.986, the fraud is concentrated much higher than the 5%
-  row implies; the percentage table understates the result while appearing to
-  flatter it.
-- **69 positives is a small denominator.** 68/69 is "98.6%" only to the extent
-  that three significant figures mean anything on 69 samples — the 95% Wilson
-  interval runs from roughly 92% to 99.7%, and one more miss moves the point
-  estimate by 1.4 points. The reports now carry that interval, and `train.py`
-  prints a warning when the test split has fewer than 100 confirmed-fraud
-  alerts. Read the counts, not the decimals.
+Two things this table does not say:
+
+- **The 69th fraud is genuinely hard.** It is still missing at 19,772 alerts
+  and only appears by 39,543 — the model ranks it no better than an arbitrary
+  alert. Recall does reach 100%, but at 39,543 alerts of review for that one
+  case, which is a decision about appetite rather than a modelling win.
+- **69 positives is a small denominator.** "98.6%" implies precision the sample
+  can't support: the 95% Wilson interval on 68/69 runs from **92.2% to 99.7%**,
+  and one more miss moves the point estimate by 1.4 points. The reports carry
+  that interval, and `train.py` warns when a test split has fewer than 100
+  confirmed-fraud alerts. Read the counts, not the decimals.
+
+For reference, the same run by percentage depth — 5% is 9,886 alerts for
+exactly the same 68 catches, which is why this framing was abandoned:
+
+| Review depth | Alerts reviewed | Fraud caught | Precision |
+|---|---|---|---|
+| Top 5% | 9,886 | 68 / 69 | 0.7% |
+| Top 10% | 19,772 | 68 / 69 | 0.3% |
+| Top 20% | 39,543 | 69 / 69 | 0.2% |
 
 Every score carries SHAP reason codes rendered in plain language — *"origin
 account was fully drained to zero,"* *"origin balance doesn't reconcile with
@@ -176,7 +187,16 @@ estimate instead (`EXPLAIN (FORMAT JSON)`, which respects the same filters),
 and falls back to an exact count only when the estimate is small enough that
 counting is cheap. So filtered views stay precise, the full-queue total is
 approximate, and the response marks which one it returned so the UI can render
-`~988,600` rather than presenting an estimate as fact.
+`~986,673` rather than presenting an estimate as fact.
+
+That change has a dependency worth stating, because it fails silently: the
+planner's estimate is only as good as its statistics. `explain.py` rewrites
+`model_score` on all 988,573 rows, and until the table is re-sampled the
+planner still believes the column is entirely NULL — so it estimates ~0 rows
+for the queue's `model_score IS NOT NULL` predicate and the endpoint quietly
+falls back to the exact count, at exactly the moment the table is largest.
+Nothing breaks; it just gets slow again. `explain.py` therefore runs `ANALYZE`
+as its final step rather than waiting for autovacuum.
 
 ---
 
