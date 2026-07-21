@@ -335,6 +335,13 @@ Built on [PaySim](https://www.kaggle.com/datasets/ealaxi/paysim1), a public
 synthetic dataset, to reproduce the *structure* of a bank fraud pipeline
 end-to-end. Two things worth knowing when reading the metrics:
 
+- **The workbench queue flatters the model, and the metrics don't.** The API
+  serves all 988,573 alerts, 790,858 of which the model trained on — so the top
+  of the live queue is a block of ~495 alerts scoring 1.0 that are 100% fraud,
+  substantially because the model has already seen those labels. The numbers in
+  Results come from the held-out split only: 68% precision at the top 100, not
+  the 100% the demo appears to show. If you are reading the screenshots, read
+  the Results table for what actually generalizes.
 - **The 0.998 AUC is a property of the dataset as much as the model.** PaySim's
   fraud typology drains the origin account to zero, which balance
   reconciliation captures almost perfectly. The transferable result here is the
