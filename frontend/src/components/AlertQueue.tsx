@@ -38,9 +38,12 @@ export default function AlertQueue({ selectedId, onSelect, refreshKey }: Props) 
   }, [page, statusFilter, refreshKey]);
 
   const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
-  // "~" whenever the backend returned a planner estimate instead of an exact
-  // COUNT(*), so an approximate figure is never presented as an exact one.
-  const totalLabel = `${totalIsEstimate ? '~' : ''}${total.toLocaleString()}`;
+  const totalLabel = formatTotal(total, totalIsEstimate);
+  // The planner's estimate can undershoot the real row count by double-digit
+  // percentages, and maxPage is derived from it — which would disable "next"
+  // thousands of pages before the true end of the queue. A full page of results
+  // is direct evidence more rows exist, so trust it over the estimate.
+  const canGoNext = page < maxPage || items.length === PAGE_SIZE;
 
   return (
     <div className="panel queue-panel">
@@ -132,15 +135,29 @@ export default function AlertQueue({ selectedId, onSelect, refreshKey }: Props) 
             ←
           </button>
           <span className="pager-label">
-            {page + 1} / {maxPage + 1}
+            {page + 1} / {totalIsEstimate ? '~' : ''}
+            {(maxPage + 1).toLocaleString()}
           </span>
-          <button disabled={page >= maxPage} onClick={() => setPage((p) => p + 1)}>
+          <button disabled={!canGoNext} onClick={() => setPage((p) => p + 1)}>
             →
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+/**
+ * Exact counts print in full; estimates are rounded to three significant
+ * figures. The planner's estimate is routinely off by several percent, so
+ * rendering it to the unit ("~833,041") claims a precision it does not have —
+ * "~833,000" says the same thing without the false decimals.
+ */
+function formatTotal(total: number, isEstimate: boolean): string {
+  if (!isEstimate) return total.toLocaleString();
+  if (total <= 0) return '~0';
+  const step = Math.pow(10, Math.max(0, Math.floor(Math.log10(total)) - 2));
+  return `~${(Math.round(total / step) * step).toLocaleString()}`;
 }
 
 function RiskMeter({ score }: { score: number | null }) {
