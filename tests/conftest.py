@@ -36,3 +36,5 @@ _load("enrichment_features", "enrichment/features.py")
 # beside model/features.py, which collides with enrichment/features.py — so it
 # gets the same explicit-path treatment rather than a sys.path insert.
 _load("model_evaluate", "model/evaluate.py")
+# rules/rule_definitions.py is pure numpy/pandas with no DB dependency.
+_load("rule_definitions", "rules/rule_definitions.py")

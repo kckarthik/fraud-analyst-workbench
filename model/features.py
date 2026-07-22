@@ -83,25 +83,40 @@ def _rule_dummies(rule_ids: pd.Series) -> pd.DataFrame:
     return dummies.astype(int)
 
 
-def build_feature_matrix(engine):
-    """
-    Returns (X, y, meta, categorical_cols):
-      X                 - flat feature DataFrame, one row per alert
-      y                 - binary label Series (1 = confirmed fraud)
-      meta              - alert_id / transaction_id / account_id / triggered_at, for
-                           the temporal split and the SHAP write-back
-      categorical_cols  - column names to mark 'category' dtype for LightGBM
-    """
-    df = load_raw(engine)
+# Non-structured-fact, non-rule feature columns, in the order the model expects.
+RAW_FEATURE_COLS = [
+    "transaction_type", "account_type", "card_network", "account_region",
+    "has_identity_data", "has_device", "region_mismatch",
+    "account_age_days", "hour_of_day", "day_of_week", "is_weekend",
+    "orig_balance_before", "dest_balance_before",
+    "orig_balance_delta", "dest_balance_delta",
+    "error_balance_orig", "error_balance_dest", "orig_emptied",
+]
 
-    sf, rule_ids = _structured_facts_frame(df["enrichment"])
-    rule_dummies = _rule_dummies(rule_ids)
 
-    df["account_age_days"] = (df["triggered_at"] - df["first_seen_at"]).dt.total_seconds() / 86400
+def derive_row_features(df: pd.DataFrame, event_time_col: str = "triggered_at") -> pd.DataFrame:
+    """
+    Row-level feature derivations, in place, shared verbatim between offline
+    training (build_feature_matrix, over the whole alerts table) and online
+    scoring (backend/online_features.py, over a single candidate transaction).
+
+    Shared deliberately rather than reimplemented per path. This is exactly
+    where training/serving skew is born: a second copy that drifts by one
+    definition — account age in hours instead of days, a different weekend
+    convention, a balance delta signed the other way — yields a model that
+    scores differently in production than it validated offline, with no error
+    raised anywhere and nothing in the metrics to show it.
+
+    `event_time_col` differs by path: offline the row's time is the alert's
+    triggered_at, online it is the transaction's own timestamp. Everything
+    downstream of that is identical.
+    """
+    ts = df[event_time_col]
+    df["account_age_days"] = (ts - df["first_seen_at"]).dt.total_seconds() / 86400
     df["has_device"] = df["device_id"].notna().astype(int)
     df["region_mismatch"] = (df["counterparty_region"].astype(str) != df["account_region"].astype(str)).astype(int)
-    df["hour_of_day"] = df["triggered_at"].dt.hour
-    df["day_of_week"] = df["triggered_at"].dt.dayofweek
+    df["hour_of_day"] = ts.dt.hour
+    df["day_of_week"] = ts.dt.dayofweek
     df["is_weekend"] = df["day_of_week"].isin([5, 6]).astype(int)
     df["has_identity_data"] = df["has_identity_data"].astype(int)
 
@@ -122,19 +137,33 @@ def build_feature_matrix(engine):
     df["error_balance_dest"] = db_after - db_before - amount
     # Account fully drained (balance had funds, went to exactly zero).
     df["orig_emptied"] = ((ob_before > 0) & (ob_after == 0)).astype(int)
+    return df
 
-    raw_features = df[[
-        "transaction_type", "account_type", "card_network", "account_region",
-        "has_identity_data", "has_device", "region_mismatch",
-        "account_age_days", "hour_of_day", "day_of_week", "is_weekend",
-        "orig_balance_before", "dest_balance_before",
-        "orig_balance_delta", "dest_balance_delta",
-        "error_balance_orig", "error_balance_dest", "orig_emptied",
-    ]].copy()
 
-    X = pd.concat([raw_features, sf, rule_dummies], axis=1)
+def assemble_X(raw: pd.DataFrame, sf: pd.DataFrame, rule_dummies: pd.DataFrame) -> pd.DataFrame:
+    """Concatenate the three feature blocks and apply categorical dtypes."""
+    X = pd.concat([raw[RAW_FEATURE_COLS], sf, rule_dummies], axis=1)
     for col in CATEGORICAL_COLS:
         X[col] = X[col].astype("category")
+    return X
+
+
+def build_feature_matrix(engine):
+    """
+    Returns (X, y, meta, categorical_cols):
+      X                 - flat feature DataFrame, one row per alert
+      y                 - binary label Series (1 = confirmed fraud)
+      meta              - alert_id / transaction_id / account_id / triggered_at, for
+                           the temporal split and the SHAP write-back
+      categorical_cols  - column names to mark 'category' dtype for LightGBM
+    """
+    df = load_raw(engine)
+
+    sf, rule_ids = _structured_facts_frame(df["enrichment"])
+    rule_dummies = _rule_dummies(rule_ids)
+
+    df = derive_row_features(df, event_time_col="triggered_at")
+    X = assemble_X(df, sf, rule_dummies)
 
     y = (df["decision"] == "fraud").astype(int)
     meta = df[["alert_id", "transaction_id", "account_id", "triggered_at"]]

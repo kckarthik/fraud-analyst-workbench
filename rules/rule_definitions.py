@@ -123,10 +123,29 @@ def rule_new_account_high_amount(df: pd.DataFrame, accounts: pd.DataFrame,
 
 
 def rule_multi_product_same_day(df: pd.DataFrame) -> pd.Series:
-    """Account uses more than one distinct transaction type on the same calendar day."""
+    """
+    Account has used more than one distinct transaction type so far today —
+    counting only this transaction and the ones before it.
+
+    The original computed `transform("nunique")` over the whole (account, day)
+    group, which spans transactions that had not happened yet. Offline that
+    looked fine; every row of the day saw the day's full set of product types.
+    It is not point-in-time correct, and the divergence is not academic: a rule
+    that needs to know what the account will do at 3pm cannot be evaluated on a
+    transaction arriving at 10am, so it could not be reproduced by the online
+    scoring path at all. Found by scoring already-scored transactions through
+    POST /api/score and diffing the fired rules — 52 of 200 disagreed, every one
+    of them on the account's first transaction of the day.
+
+    Prior-only formulation: distinct types among rows 0..i exceeds one exactly
+    when some row at or before i differs from the day's first type, so a running
+    maximum over that comparison gives the expanding distinct-count test without
+    a per-group Python pass.
+    """
     day = df["ts"].dt.date
-    distinct_types = df.groupby(["account_id", day])["transaction_type"].transform("nunique")
-    return (distinct_types > 1).values
+    grouped = df.groupby(["account_id", day], sort=False)["transaction_type"]
+    differs_from_first = df["transaction_type"] != grouped.transform("first")
+    return differs_from_first.groupby([df["account_id"], day], sort=False).cummax().values
 
 
 def rule_missing_identity_high_amount(df: pd.DataFrame, threshold: float = 500) -> pd.Series:

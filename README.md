@@ -49,7 +49,16 @@ flowchart LR
     H --> J[LangGraph NL2SQL agent]
     J -->|read-only role| B
     J --> K[Ollama<br/>local LLM]
+    L[New transaction] --> M[POST /api/score]
+    M -->|account history| B
+    M --> N[Score + SHAP<br/>reason codes]
 ```
+
+Two scoring paths, one implementation. The batch sweep ranks the existing queue;
+`POST /api/score` scores a single transaction on arrival, rebuilding its
+history-dependent features from the database at request time. They share the
+model artifact, the feature derivations, the rules and the reason-code
+rendering — see [the online path](#building-the-online-path-found-a-rule-that-could-never-have-been-served).
 
 Scores and reason codes are written back into Postgres as JSONB, so serving the
 ranked queue is a single indexed query — no inference at request time.
@@ -159,6 +168,64 @@ scale_pos_weight = min(np.sqrt(n_neg / n_pos), 25.0)
 
 Fraud in the top 1,000 went from **1 → 522** of 523.
 
+### Building the online path found a rule that could never have been served
+
+Scoring was batch-only: the pipeline ranks a table it already holds. Adding
+`POST /api/score` — score one transaction as it arrives — meant rebuilding every
+history-dependent feature at request time from whatever the database knew about
+that account at that instant.
+
+The approach was to reuse rather than reimplement. Every rule in
+`rules/rule_definitions.py` is already a pure function of a DataFrame, so the
+endpoint fetches the account's prior transactions, appends the candidate, and
+runs *the same functions* over that small frame. `model/features.py` exposes its
+row-level derivations (`derive_row_features`) to both paths for the same reason:
+a second copy that drifts by one definition produces a model that scores
+differently online than it validated offline, with nothing raising an error.
+
+Then the obvious check: replay transactions the batch pipeline had already
+scored through the endpoint and diff the results.
+
+| Replayed | Score agreement | Rule-set agreement |
+|---|---|---|
+| 40 highest-scoring alerts | 40/40 exact (<1e-9) | 40/40 |
+| 200 on multi-transaction accounts | no mismatch >1e-3 | **148/200** |
+
+52 disagreements, all on the same rule, all on the account's first transaction
+of the day. `rule_multi_product_same_day` was written as:
+
+```python
+distinct_types = df.groupby(["account_id", day])["transaction_type"].transform("nunique")
+return (distinct_types > 1).values
+```
+
+`nunique` spans the whole day's group — *including transactions that had not
+happened yet*. A transaction at 10am already knew the account would use a second
+product at 3pm. Offline this looks healthy, because every row gets the day's
+complete picture. It is simply not point-in-time correct, and the consequence is
+not cosmetic: a rule that depends on the account's future cannot be evaluated
+when the transaction arrives, so it could not be served at all.
+
+Rewritten to count only this transaction and the ones before it, which halved
+its firing rate (186 alerts → 93 — previously *both* transactions of a same-day
+pair fired; now only the second one can). It fired on no confirmed fraud, so
+retraining left every metric above unchanged. Replaying the same 200
+transactions afterwards took the disagreements from **52 to 7**.
+
+The residual 7 are not a bug, and are worth stating rather than rounding away.
+PaySim's `step` is hourly, so an account can have two transactions at a
+genuinely identical timestamp — 9 accounts here do, with differing product
+types. Offline they land in the same day group and one of them arbitrarily
+sorts first, so the other fires. Online, history is fetched with `ts <
+candidate`, which cannot see a row sharing the candidate's timestamp — correctly,
+because at equal timestamps nothing in the data says which came first.
+Reconciling that needs a monotonic sequence number or sub-second precision, not
+a tiebreaker invented in the query.
+
+The point is not the rule, which is minor. It is that a batch backtest cannot
+detect this class of bug — the feature is available at training time by
+construction — and building the serving path is what made it visible.
+
 ### Performance
 
 | Stage | Before | After | How |
@@ -207,8 +274,8 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-59 tests, no database required — the suite is pure DataFrame and SQL-parsing
-logic, so CI runs it without a Postgres service container. Three areas get
+71 tests, no database required — the suite is pure DataFrame and SQL-parsing
+logic, so CI runs it without a Postgres service container. Four areas get
 disproportionate coverage because that's where the risk is:
 
 **The SQL guard.** An LLM writes SQL and we execute it, so the guard is tested
@@ -226,6 +293,13 @@ catch it: assertions are keyed by `transaction_id` rather than positional, and
 the fixture interleaves two accounts in time so global-timestamp order and
 `(account_id, ts)` order genuinely differ. Positional assertions on contiguous
 data would have passed against the broken implementation.
+
+**Point-in-time rule validity.** `tests/test_rules.py` pins the case that broke:
+an account using PAYMENT at 10:00 and TRANSFER at 15:00 must not fire
+`multi_product_same_day` on the 10:00 transaction. The old implementation fired
+on both, and no batch test could have caught it — offline, the feature is
+available by construction. Assertions are keyed by `transaction_id` and the
+fixture interleaves two accounts, for the same reasons the velocity tests are.
 
 **Queue-depth reporting.** The numbers in the Results section are read straight
 off this code, and its failure mode isn't a crash — it's a plausible number
@@ -299,6 +373,39 @@ check it rather than trust it.*
 
 ---
 
+## Scoring a transaction in real time
+
+```bash
+curl -X POST localhost:8000/api/score -H 'content-type: application/json' -d '{
+  "account_id": "C1231006815",
+  "ts": "2019-01-02T18:00:00",
+  "amount": 181.0,
+  "transaction_type": "TRANSFER",
+  "orig_balance_before": 181.0,
+  "orig_balance_after": 0.0,
+  "dest_balance_before": 0.0,
+  "dest_balance_after": 0.0
+}'
+```
+
+Returns the model score, the rules that fired, SHAP reason codes and the same
+plain-language narrative the queue shows, plus `history_transactions_used` —
+because a score computed from two prior transactions is a weaker claim than one
+computed from two hundred, and the number alone doesn't say which you got.
+
+What it does **not** do, stated plainly rather than left to be discovered:
+
+- Features come from history **already committed to Postgres**. Two transactions
+  arriving in the same instant will not see each other. A real deployment puts a
+  streaming feature store here.
+- Account history is capped at 500 prior transactions. That covers every window
+  the features actually use (24h velocity, same-day rules), but makes the
+  expanding z-score baseline approximate for very active accounts.
+- An unknown `account_id` is rejected with 422 rather than scored against
+  invented history.
+- There is no authentication on this endpoint, or any other. See
+  [Scope](#scope).
+
 ## Stack
 
 | Layer | Technology |
@@ -356,7 +463,24 @@ cd frontend && npm install && npm run dev   # :5173
 
 Built on [PaySim](https://www.kaggle.com/datasets/ealaxi/paysim1), a public
 synthetic dataset, to reproduce the *structure* of a bank fraud pipeline
-end-to-end. Two things worth knowing when reading the metrics:
+end-to-end.
+
+**This is not production infrastructure, and does not claim to be.** There is no
+authentication or authorization on the API — any caller can score a transaction
+or disposition an alert, and `analyst_id` is whatever the request says it is.
+The schema is applied by running a `.sql` file by hand, so there are no
+migrations and no upgrade path for a populated database. There is no structured
+logging, no metrics, no tracing, no model-drift monitoring and no retraining
+schedule — the last two would be theatre over a frozen CSV. Postgres is a single
+container with no replication or backups, and secrets live in a gitignored
+`.env` rather than a secrets manager.
+
+What it does reproduce faithfully is the reasoning: temporal validation rather
+than random, ranking rather than classification, defense in depth around the
+LLM, point-in-time correct features, and metrics reported at the depths an
+operations team actually works.
+
+Three more things worth knowing when reading the metrics:
 
 - **The workbench queue flatters the model, and the metrics don't.** The API
   serves all 988,573 alerts, 790,858 of which the model trained on — so the top
